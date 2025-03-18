@@ -1,0 +1,30 @@
+@baseUrl = http://localhost:8080
+@contentType = application/json
+
+### Create a new todo
+POST {{baseUrl}}/todos
+Content-Type: {{contentType}}
+
+{
+    "title": "Learn Go",
+    "description": "Study Go programming language and clean architecture"
+}
+
+### Get all todos
+GET {{baseUrl}}/todos
+
+### Get a specific todo (replace {id} with actual ID)
+GET {{baseUrl}}/todos/1
+
+### Update a todo (replace {id} with actual ID)
+PUT {{baseUrl}}/todos/1
+Content-Type: {{contentType}}
+
+{
+    "title": "Learn Go",
+    "description": "Study Go programming language and clean architecture",
+    "completed": true
+}
+
+### Delete a todo (replace {id} with actual ID)
+DELETE {{baseUrl}}/todos/1 
