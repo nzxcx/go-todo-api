@@ -1,74 +1,132 @@
 package repository
 
 import (
-	"errors"
-	"sync"
-
+	"database/sql"
 	"go-todo-api/internal/domain"
+	"time"
+
+	_ "github.com/lib/pq"
 )
 
 type todoRepository struct {
-	todos map[uint]*domain.Todo
-	mutex sync.RWMutex
-	nextID uint
+	db *sql.DB
 }
 
-func NewTodoRepository() domain.TodoRepository {
+func NewTodoRepository(db *sql.DB) domain.TodoRepository {
 	return &todoRepository{
-		todos: make(map[uint]*domain.Todo),
-		nextID: 1,
+		db: db,
 	}
 }
 
 func (r *todoRepository) Create(todo *domain.Todo) error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+	query := `
+		INSERT INTO todos (title, description, completed, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $4)
+		RETURNING id`
 
-	todo.ID = r.nextID
-	r.todos[todo.ID] = todo
-	r.nextID++
-	return nil
+	now := time.Now()
+	return r.db.QueryRow(
+		query,
+		todo.Title,
+		todo.Description,
+		todo.Completed,
+		now,
+	).Scan(&todo.ID)
 }
 
 func (r *todoRepository) GetByID(id uint) (*domain.Todo, error) {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
+	todo := &domain.Todo{}
+	query := `
+		SELECT id, title, description, completed, created_at, updated_at
+		FROM todos
+		WHERE id = $1`
 
-	if todo, exists := r.todos[id]; exists {
-		return todo, nil
+	err := r.db.QueryRow(query, id).Scan(
+		&todo.ID,
+		&todo.Title,
+		&todo.Description,
+		&todo.Completed,
+		&todo.CreatedAt,
+		&todo.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, domain.ErrNotFound
 	}
-	return nil, errors.New("todo not found")
+	return todo, err
 }
 
 func (r *todoRepository) GetAll() ([]*domain.Todo, error) {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
+	query := `
+		SELECT id, title, description, completed, created_at, updated_at
+		FROM todos`
 
-	todos := make([]*domain.Todo, 0, len(r.todos))
-	for _, todo := range r.todos {
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var todos []*domain.Todo
+	for rows.Next() {
+		todo := &domain.Todo{}
+		err := rows.Scan(
+			&todo.ID,
+			&todo.Title,
+			&todo.Description,
+			&todo.Completed,
+			&todo.CreatedAt,
+			&todo.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
 		todos = append(todos, todo)
 	}
 	return todos, nil
 }
 
 func (r *todoRepository) Update(todo *domain.Todo) error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+	query := `
+		UPDATE todos
+		SET title = $1, description = $2, completed = $3, updated_at = $4
+		WHERE id = $5`
 
-	if _, exists := r.todos[todo.ID]; !exists {
-		return errors.New("todo not found")
+	result, err := r.db.Exec(
+		query,
+		todo.Title,
+		todo.Description,
+		todo.Completed,
+		time.Now(),
+		todo.ID,
+	)
+	if err != nil {
+		return err
 	}
-	r.todos[todo.ID] = todo
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return domain.ErrNotFound
+	}
 	return nil
 }
 
 func (r *todoRepository) Delete(id uint) error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+	query := `DELETE FROM todos WHERE id = $1`
 
-	if _, exists := r.todos[id]; !exists {
-		return errors.New("todo not found")
+	result, err := r.db.Exec(query, id)
+	if err != nil {
+		return err
 	}
-	delete(r.todos, id)
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return domain.ErrNotFound
+	}
 	return nil
 } 
